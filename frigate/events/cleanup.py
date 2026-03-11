@@ -11,7 +11,7 @@ from typing import Any
 from frigate.config import FrigateConfig
 from frigate.const import CLIPS_DIR
 from frigate.db.sqlitevecq import SqliteVecQueueDatabase
-from frigate.models import Event, Timeline
+from frigate.models import Event, PersonEntity, PersonObservation, Timeline
 from frigate.util.file import delete_event_snapshot, delete_event_thumbnail
 
 logger = logging.getLogger(__name__)
@@ -362,5 +362,42 @@ class EventCleanup(threading.Thread):
                         self.db.delete_embeddings_description(event_ids=chunk)
                         self.db.delete_embeddings_thumbnail(event_ids=chunk)
                         logger.debug(f"Deleted {len(ids_to_delete)} embeddings")
+
+                    if self.config.person_entity.enabled:
+                        obs_rows = list(
+                            PersonObservation.select(
+                                PersonObservation.id,
+                                PersonObservation.person_entity_id,
+                            ).where(PersonObservation.event_id << chunk)
+                        )
+                        if obs_rows:
+                            obs_ids = [o.id for o in obs_rows]
+                            affected_entity_ids = list(
+                                {
+                                    o.person_entity_id
+                                    for o in obs_rows
+                                    if o.person_entity_id
+                                }
+                            )
+                            self.db.delete_embeddings_face_observation(obs_ids)
+                            PersonObservation.delete().where(
+                                PersonObservation.id << obs_ids
+                            ).execute()
+                            for eid in affected_entity_ids:
+                                remaining = (
+                                    PersonObservation.select()
+                                    .where(
+                                        PersonObservation.person_entity_id
+                                        == eid
+                                    )
+                                    .count()
+                                )
+                                if remaining == 0:
+                                    PersonEntity.delete().where(
+                                        PersonEntity.id == eid
+                                    ).execute()
+                            logger.debug(
+                                f"Deleted {len(obs_ids)} person observations"
+                            )
 
         logger.info("Exiting event cleanup...")

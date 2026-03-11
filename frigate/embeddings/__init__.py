@@ -319,3 +319,13 @@ class EmbeddingsContext:
             EmbeddingsRequestEnum.summarize_review.value,
             {"start_ts": start_ts, "end_ts": end_ts},
         )
+
+    def search_person_face(self, image_bytes: bytes) -> list[tuple[str, float]]:
+        """Search person entities by face image. Returns list of (observation_id, distance)."""
+        result = self.requestor.send_data(
+            EmbeddingsRequestEnum.search_person_face.value,
+            {"image": base64.b64encode(image_bytes).decode("ASCII")},
+        )
+        if not result or not isinstance(result, list):
+            return []
+        return [(item[0], float(item[1])) for item in result]

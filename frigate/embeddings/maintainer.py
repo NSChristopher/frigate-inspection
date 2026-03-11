@@ -4,6 +4,7 @@ import base64
 import datetime
 import logging
 import threading
+import time
 from multiprocessing.synchronize import Event as MpEvent
 from typing import Any
 
@@ -36,6 +37,7 @@ from frigate.config.camera.updater import (
 from frigate.data_processing.common.license_plate.model import (
     LicensePlateModelRunner,
 )
+from frigate.data_processing.person_clustering import run_clustering
 from frigate.data_processing.post.api import PostProcessorApi
 from frigate.data_processing.post.audio_transcription import (
     AudioTranscriptionPostProcessor,
@@ -56,11 +58,19 @@ from frigate.data_processing.real_time.face import FaceRealTimeProcessor
 from frigate.data_processing.real_time.license_plate import (
     LicensePlateRealTimeProcessor,
 )
+from frigate.data_processing.real_time.person_entity import PersonEntityProcessor
 from frigate.data_processing.types import DataProcessorMetrics, PostProcessDataEnum
 from frigate.db.sqlitevecq import SqliteVecQueueDatabase
 from frigate.events.types import EventTypeEnum, RegenerateDescriptionEnum
 from frigate.genai import GenAIClientManager
-from frigate.models import Event, Recordings, ReviewSegment, Trigger
+from frigate.models import (
+    Event,
+    PersonEntity,
+    PersonObservation,
+    Recordings,
+    ReviewSegment,
+    Trigger,
+)
 from frigate.util.builtin import serialize
 from frigate.util.file import get_event_thumbnail_bytes
 from frigate.util.image import SharedMemoryFrameManager
@@ -111,8 +121,19 @@ class EmbeddingMaintainer(threading.Thread):
             ),
             load_vec_extension=True,
         )
-        models = [Event, Recordings, ReviewSegment, Trigger]
+        models = [
+            Event,
+            Recordings,
+            ReviewSegment,
+            Trigger,
+            PersonEntity,
+            PersonObservation,
+        ]
         db.bind(models)
+        self.db = db
+
+        if config.person_entity.enabled:
+            db.create_person_embeddings_tables()
 
         self.genai_manager = GenAIClientManager(config)
 
@@ -164,6 +185,15 @@ class EmbeddingMaintainer(threading.Thread):
                 )
             )
             logger.debug("FaceRealTimeProcessor initialized successfully")
+
+        if self.config.person_entity.enabled:
+            logger.debug(
+                "Person entity tracking enabled, initializing PersonEntityProcessor"
+            )
+            self.realtime_processors.append(
+                PersonEntityProcessor(self.config, metrics, self.db)
+            )
+            logger.debug("PersonEntityProcessor initialized successfully")
 
         if self.config.classification.bird.enabled:
             self.realtime_processors.append(
@@ -266,6 +296,7 @@ class EmbeddingMaintainer(threading.Thread):
 
         # recordings data
         self.recordings_available_through: dict[str, float] = {}
+        self._last_person_clustering_run: float = 0.0
 
     def run(self) -> None:
         """Maintain a SQLite-vec database for semantic search."""
@@ -278,6 +309,7 @@ class EmbeddingMaintainer(threading.Thread):
             self._process_review_updates()
             self._process_frame_updates()
             self._expire_dedicated_lpr()
+            self._process_person_clustering()
             self._process_finalized()
             self._process_event_metadata()
 
@@ -402,6 +434,36 @@ class EmbeddingMaintainer(threading.Thread):
                     elif topic == EmbeddingsRequestEnum.reindex.value:
                         response = self.embeddings.start_reindex()
                         return "started" if response else "in_progress"
+
+                if topic == EmbeddingsRequestEnum.search_person_face.value:
+                    image_b64 = data.get("image")
+                    if not image_b64:
+                        return []
+                    image_bytes = base64.b64decode(image_b64)
+                    for proc in self.realtime_processors:
+                        if isinstance(proc, PersonEntityProcessor):
+                            embedding = proc.get_embedding_for_image(image_bytes)
+                            if embedding is None:
+                                return []
+                            try:
+                                cursor = self.db.execute_sql(
+                                    """
+                                    SELECT id, distance
+                                    FROM vec_face_observations
+                                    WHERE face_embedding MATCH ?
+                                    AND k = 20
+                                    ORDER BY distance
+                                    """,
+                                    (serialize(embedding),),
+                                )
+                                rows = cursor.fetchall() if cursor else []
+                            except Exception as e:
+                                logger.debug(
+                                    "Person face search vec failed: %s", e
+                                )
+                                rows = []
+                            return [[row[0], row[1]] for row in rows]
+                    return []
 
                 processors = [self.realtime_processors, self.post_processors]
                 for processor_list in processors:
@@ -567,6 +629,20 @@ class EmbeddingMaintainer(threading.Thread):
                         {"event_id": event_id, "camera": camera},
                         PostProcessDataEnum.tracked_object,
                     )
+
+    def _process_person_clustering(self) -> None:
+        """Run identity clustering periodically."""
+        if not self.config.person_entity.enabled:
+            return
+        now = time.time()
+        interval = self.config.person_entity.clustering_interval
+        if now - self._last_person_clustering_run < interval:
+            return
+        self._last_person_clustering_run = now
+        try:
+            run_clustering(self.db, self.config)
+        except Exception as e:
+            logger.debug("Person clustering run failed: %s", e)
 
     def _expire_dedicated_lpr(self) -> None:
         """Remove plates not seen for longer than expiration timeout for dedicated lpr cameras."""

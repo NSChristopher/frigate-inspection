@@ -177,3 +177,38 @@ class Trigger(Model):
 
     class Meta:
         primary_key = CompositeKey("camera", "name")
+
+
+class PersonEntity(Model):
+    """Persistent identity profile (Layer 4)."""
+
+    id = CharField(null=False, primary_key=True, max_length=36)
+    known_name = CharField(max_length=100, null=True)
+    face_centroid = BlobField(null=True)
+    first_seen = DateTimeField()
+    last_seen = DateTimeField()
+    observation_count = IntegerField(default=0)
+    cameras_seen = JSONField()
+    confidence = FloatField(null=True)
+    is_known = BooleanField(default=False)
+
+
+class PersonObservation(Model):
+    """Per-event person observation (Layer 2-3)."""
+
+    id = CharField(null=False, primary_key=True, max_length=36)
+    event_id = CharField(index=True, max_length=30)
+    camera = CharField(index=True, max_length=20)
+    timestamp = DateTimeField()
+    face_embedding = BlobField(null=True)
+    face_quality_score = FloatField(null=True)
+    face_bbox = JSONField(null=True)
+    body_embedding = BlobField(null=True)
+    bbox = JSONField(null=True)
+    snapshot_path = TextField(null=True)
+    zones = JSONField(null=True)
+    path_data = JSONField(null=True)
+    avg_speed = FloatField(null=True)
+    velocity_angle = FloatField(null=True)
+    dwell_time = FloatField(null=True)
+    person_entity_id = CharField(index=True, max_length=36, null=True)

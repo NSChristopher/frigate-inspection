@@ -56,6 +56,8 @@ from frigate.log import _stop_logging
 from frigate.models import (
     Event,
     Export,
+    PersonEntity,
+    PersonObservation,
     Previews,
     Recordings,
     RecordingsToDelete,
@@ -111,6 +113,7 @@ class FrigateApp:
                 )
                 or config.lpr.enabled
                 or config.face_recognition.enabled
+                or config.person_entity.enabled
                 or len(config.classification.custom) > 0
             )
             else None
@@ -282,7 +285,8 @@ class FrigateApp:
                 10
                 * len([c for c in self.config.cameras.values() if c.enabled_in_config]),
             ),
-            load_vec_extension=self.config.semantic_search.enabled,
+            load_vec_extension=self.config.semantic_search.enabled
+            or self.config.person_entity.enabled,
         )
         models = [
             Event,
@@ -295,6 +299,8 @@ class FrigateApp:
             Timeline,
             User,
             Trigger,
+            PersonEntity,
+            PersonObservation,
         ]
         self.db.bind(models)
 

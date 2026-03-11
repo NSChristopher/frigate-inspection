@@ -60,6 +60,7 @@ from .classification import (
     ClassificationConfig,
     FaceRecognitionConfig,
     LicensePlateRecognitionConfig,
+    PersonEntityConfig,
     SemanticSearchConfig,
     SemanticSearchModelEnum,
 )
@@ -553,6 +554,11 @@ class FrigateConfig(FrigateBaseModel):
         default_factory=LicensePlateRecognitionConfig,
         title="License Plate Recognition",
         description="License plate recognition settings including detection thresholds, formatting, and known plates.",
+    )
+    person_entity: PersonEntityConfig = Field(
+        default_factory=PersonEntityConfig,
+        title="Person entity tracking",
+        description="Store face embeddings and observation data per person for identity clustering and behavioral analytics.",
     )
 
     camera_groups: Dict[str, CameraGroupConfig] = Field(

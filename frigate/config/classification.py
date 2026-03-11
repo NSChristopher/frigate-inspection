@@ -10,6 +10,7 @@ __all__ = [
     "CameraLicensePlateRecognitionConfig",
     "CameraAudioTranscriptionConfig",
     "FaceRecognitionConfig",
+    "PersonEntityConfig",
     "SemanticSearchConfig",
     "CameraSemanticSearchConfig",
     "LicensePlateRecognitionConfig",
@@ -311,6 +312,56 @@ class CameraFaceRecognitionConfig(FrigateBaseModel):
     )
 
     model_config = ConfigDict(extra="forbid", protected_namespaces=())
+
+
+class PersonEntityEmbeddingModelEnum(str, Enum):
+    arcface = "arcface"
+    facenet = "facenet"
+
+
+class PersonEntityConfig(FrigateBaseModel):
+    enabled: bool = Field(
+        default=False,
+        title="Enable person entity tracking",
+        description="Store face embeddings and observation data per person detection for identity clustering and behavioral analytics.",
+    )
+    embedding_model: PersonEntityEmbeddingModelEnum = Field(
+        default=PersonEntityEmbeddingModelEnum.arcface,
+        title="Face embedding model",
+        description="Model used for face embeddings (arcface or facenet). ArcFace uses 512-dim; FaceNet uses 128-dim.",
+    )
+    min_face_quality: float = Field(
+        default=0.5,
+        title="Minimum face quality",
+        description="Minimum face quality score (blur/size) to store an observation.",
+        gt=0.0,
+        le=1.0,
+    )
+    max_observations_per_event: int = Field(
+        default=3,
+        title="Max observations per event",
+        description="Maximum number of face observations to store per tracked person event.",
+        ge=1,
+        le=10,
+    )
+    clustering_interval: int = Field(
+        default=60,
+        title="Clustering interval (seconds)",
+        description="Interval between identity clustering runs.",
+        ge=10,
+    )
+    similarity_threshold: float = Field(
+        default=0.7,
+        title="Similarity threshold",
+        description="Cosine similarity threshold for clustering faces into the same entity.",
+        gt=0.0,
+        le=1.0,
+    )
+    device: Optional[str] = Field(
+        default=None,
+        title="Device",
+        description="Device for embedding model (e.g. CPU, GPU). See ONNX execution providers.",
+    )
 
 
 class ReplaceRule(FrigateBaseModel):

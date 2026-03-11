@@ -67,3 +67,24 @@ class SqliteVecQueueDatabase(SqliteQueueDatabase):
                 description_embedding FLOAT[768] distance_metric=cosine
             );
         """)
+
+    def delete_embeddings_face_observation(self, observation_ids: list[str]) -> None:
+        ids = ",".join(["?" for _ in observation_ids])
+        self.execute_sql(
+            f"DELETE FROM vec_face_observations WHERE id IN ({ids})",
+            observation_ids,
+        )
+
+    def drop_person_embeddings_tables(self) -> None:
+        self.execute_sql("""
+            DROP TABLE IF EXISTS vec_face_observations;
+        """)
+
+    def create_person_embeddings_tables(self) -> None:
+        """Create vec0 virtual table for face observation embeddings (ArcFace 512-dim)."""
+        self.execute_sql("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS vec_face_observations USING vec0(
+                id TEXT PRIMARY KEY,
+                face_embedding FLOAT[512] distance_metric=cosine
+            );
+        """)

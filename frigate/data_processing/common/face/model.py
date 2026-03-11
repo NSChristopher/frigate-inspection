@@ -264,6 +264,17 @@ class FaceNetRecognizer(FaceRecognizer):
 
         return label, max(0, round(score - blur_reduction, 2))
 
+    def get_embedding(
+        self, face_image: np.ndarray
+    ) -> tuple[np.ndarray, float] | None:
+        """Return raw face embedding and blur reduction. Does not require mean_embs."""
+        if not self.landmark_detector:
+            return None
+        blur_reduction = self.get_blur_confidence_reduction(face_image)
+        img = self.align_face(face_image, face_image.shape[1], face_image.shape[0])
+        embedding = self.face_embedder([img])[0].squeeze()
+        return embedding.astype(np.float32), blur_reduction
+
 
 class ArcFaceRecognizer(FaceRecognizer):
     def __init__(self, config: FrigateConfig):
@@ -371,3 +382,14 @@ class ArcFaceRecognizer(FaceRecognizer):
                 label = name
 
         return label, max(0, round(score - blur_reduction, 2))
+
+    def get_embedding(
+        self, face_image: np.ndarray
+    ) -> tuple[np.ndarray, float] | None:
+        """Return raw face embedding and blur reduction. Does not require mean_embs."""
+        if not self.landmark_detector:
+            return None
+        blur_reduction = self.get_blur_confidence_reduction(face_image)
+        img = self.align_face(face_image, face_image.shape[1], face_image.shape[0])
+        embedding = self.face_embedder([img])[0].squeeze()
+        return embedding.astype(np.float32), blur_reduction
